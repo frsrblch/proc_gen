@@ -1,0 +1,22 @@
+[package]
+name = "procedural_generation"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = "0.8"
+rand_pcg = "0.3"
+blake3 = "1"
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+criterion = "*"
+
+[features]
+serde = ["dep:serde"]
+
+[[bench]]
+name = "bench"
+harness = false
