@@ -1,3 +1,7 @@
+//! Types and traits for generating deterministic pseudorandom numbers.
+//!
+//! To generate values of type `T`, a key must implement and `PrngKey` and `Generate<T>`
+
 #![feature(associated_type_defaults)]
 
 use rand::{
@@ -10,7 +14,7 @@ pub trait PrngKey {
     fn key(&self) -> u64;
 }
 
-/// Types that can be used to generate deterministic pseudorandom values of `T` for a given `Seed`
+/// Types that can be used to generate deterministic pseudorandom values of `T`
 pub trait Generate<T> {
     /// A hard-coded random number that is xor'ed with the seed value and key value to produce values that are unique to that seed-key-type
     const XOR: u128;
@@ -25,7 +29,7 @@ pub trait Prng<K> {
     fn generate<T>(&self, key: &K) -> T
     where
         K: PrngKey + Generate<T>,
-        K::Distribution: Distribution<T>;
+        <K as Generate<T>>::Distribution: Distribution<T>;
 }
 
 /// Seed values for procedurally generating deterministic pseudo-random numbers
@@ -59,7 +63,7 @@ impl<K> Prng<K> for Seed {
     fn generate<T>(&self, key: &K) -> T
     where
         K: PrngKey + Generate<T>,
-        K::Distribution: Distribution<T>,
+        <K as Generate<T>>::Distribution: Distribution<T>,
     {
         // rand_pcg::Pcg64Mcg::new sets the lowest bit to 1, so the key cannot overlap with that bit
         let key = (key.key() as u128) << 64;
