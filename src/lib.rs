@@ -35,7 +35,7 @@ pub trait Prng<K> {
 /// Seed values for procedurally generating deterministic pseudo-random numbers
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Seed(u128);
+pub struct Seed(pub u128);
 
 impl Seed {
     /// Generate a `Seed` by hashing an input `&str`
