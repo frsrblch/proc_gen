@@ -20,6 +20,10 @@ pub trait KeyFor<T> {
     const XOR: u128;
     /// The sample distribution
     type Distribution = Standard;
+}
+
+/// Provide a default distribution for T
+pub trait KeyDistribution<T>: KeyFor<T> {
     fn distribution() -> Self::Distribution;
 }
 
@@ -37,6 +41,14 @@ pub trait GenerateFrom<K: PrngKey>: Prng<K> {
         <K as KeyFor<T>>::Distribution: Distribution<T>,
     {
         distribution.sample(&mut self.rng(key))
+    }
+
+    fn generate_dist<T>(&self, key: &K) -> T
+    where
+        K: PrngKey + KeyFor<T> + KeyDistribution<T>,
+        <K as KeyFor<T>>::Distribution: Distribution<T>,
+    {
+        self.generate_from(key, &K::distribution())
     }
 }
 
@@ -122,9 +134,6 @@ mod tests {
 
     impl KeyFor<Value1> for ValueKey {
         const XOR: u128 = 1;
-        fn distribution() -> Self::Distribution {
-            rand::distributions::Standard
-        }
     }
 
     #[derive(Debug, PartialEq)]
@@ -144,9 +153,6 @@ mod tests {
 
     impl KeyFor<Value2> for ValueKey {
         const XOR: u128 = 2;
-        fn distribution() -> Self::Distribution {
-            rand::distributions::Standard
-        }
     }
 
     #[test]
@@ -183,9 +189,6 @@ mod tests {
 
         impl KeyFor<Global> for () {
             const XOR: u128 = 635184615;
-            fn distribution() -> Self::Distribution {
-                rand::distributions::Standard
-            }
         }
 
         impl rand::distributions::Distribution<Global> for rand::distributions::Standard {
