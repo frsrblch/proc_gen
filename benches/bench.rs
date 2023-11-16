@@ -5,9 +5,6 @@ pub struct Key(u64);
 
 impl KeyFor<f64> for Key {
     const XOR: u128 = 2319109883130468428;
-    fn distribution() -> Self::Distribution {
-        rand::distributions::Standard
-    }
 }
 
 impl PrngKey for Key {
