@@ -24,12 +24,16 @@ pub trait Generate<T> {
 }
 
 /// Helper trait for generating deterministic pseudorandom values for `PrngKey` keys that implement `Generate<T>`
-pub trait Prng<K> {
+pub trait Prng<K: PrngKey> {
     /// Generates a value for the given `Seed` and key `K`
     fn generate<T>(&self, key: &K) -> T
     where
-        K: PrngKey + Generate<T>,
+        K: Generate<T>,
         <K as Generate<T>>::Distribution: Distribution<T>;
+
+    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
+    where
+        K: Generate<T>;
 }
 
 /// Seed values for procedurally generating deterministic pseudo-random numbers
@@ -59,17 +63,24 @@ impl Distribution<Seed> for Standard {
     }
 }
 
-impl<K> Prng<K> for Seed {
+impl<K: PrngKey> Prng<K> for Seed {
     fn generate<T>(&self, key: &K) -> T
     where
-        K: PrngKey + Generate<T>,
+        K: Generate<T>,
         <K as Generate<T>>::Distribution: Distribution<T>,
+    {
+        let mut rng = self.rng(key);
+        K::distribution().sample(&mut rng)
+    }
+
+    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
+    where
+        K: Generate<T>,
     {
         // rand_pcg::Pcg64Mcg::new sets the lowest bit to 1, so the key cannot overlap with that bit
         let key = (key.key() as u128) << 64;
         let rng_seed = self.0 ^ K::XOR ^ key;
-        let mut rng = rand_pcg::Pcg64Mcg::new(rng_seed);
-        K::distribution().sample(&mut rng)
+        rand_pcg::Pcg64Mcg::new(rng_seed)
     }
 }
 
@@ -186,5 +197,15 @@ mod tests {
         let k1 = ValueKey(0);
         let k2 = ValueKey(1);
         assert_ne!(seed.generate::<Value1>(&k1), seed.generate::<Value1>(&k2));
+    }
+
+    #[test]
+    fn prng_rng_and_generate() {
+        let seed = Seed::new_from_str("rng and generate");
+        let key = ValueKey(23);
+        let mut rng = seed.rng::<Value1>(&key);
+        let rng_value = rng.gen::<Value1>();
+        let generate_value = seed.generate::<Value1>(&key);
+        assert_eq!(rng_value, generate_value);
     }
 }
