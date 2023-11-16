@@ -15,7 +15,7 @@ pub trait PrngKey {
 }
 
 /// Types that can be used to generate deterministic pseudorandom values of `T`
-pub trait Generate<T> {
+pub trait KeyFor<T> {
     /// A hard-coded random number that is xor'ed with the seed value and key value to produce values that are unique to that seed-key-type
     const XOR: u128;
     /// The sample distribution
@@ -25,27 +25,34 @@ pub trait Generate<T> {
 
 /// Helper trait for generating deterministic pseudorandom values for `PrngKey` keys that implement `Generate<T>`
 pub trait Prng<K: PrngKey> {
-    /// Generates a value for the given `Seed` and key `K`
-    fn generate<T>(&self, key: &K) -> T
+    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
     where
-        K: Generate<T>,
-        <K as Generate<T>>::Distribution: Distribution<T>,
-    {
-        self.generate_from(key, &K::distribution())
-    }
+        K: KeyFor<T>;
+}
 
-    fn generate_from<T>(&self, key: &K, distribution: &<K as Generate<T>>::Distribution) -> T
+pub trait GenerateFrom<K: PrngKey>: Prng<K> {
+    fn generate_from<T>(&self, key: &K, distribution: &<K as KeyFor<T>>::Distribution) -> T
     where
-        K: Generate<T>,
-        <K as Generate<T>>::Distribution: Distribution<T>,
+        K: PrngKey + KeyFor<T>,
+        <K as KeyFor<T>>::Distribution: Distribution<T>,
     {
         distribution.sample(&mut self.rng(key))
     }
-
-    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
-    where
-        K: Generate<T>;
 }
+
+impl<K: PrngKey> GenerateFrom<K> for Seed {}
+
+pub trait Generate<K: PrngKey>: GenerateFrom<K> {
+    fn generate<T>(&self, key: &K) -> T
+    where
+        K: KeyFor<T, Distribution = Standard>,
+        Standard: Distribution<T>,
+    {
+        self.generate_from(key, &Standard)
+    }
+}
+
+impl<K: PrngKey> Generate<K> for Seed {}
 
 /// Seed values for procedurally generating deterministic pseudo-random numbers
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
@@ -77,7 +84,7 @@ impl Distribution<Seed> for Standard {
 impl<K: PrngKey> Prng<K> for Seed {
     fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
     where
-        K: Generate<T>,
+        K: KeyFor<T>,
     {
         // rand_pcg::Pcg64Mcg::new sets the lowest bit to 1, so the key cannot overlap with that bit
         let key = (key.key() as u128) << 64;
@@ -113,7 +120,7 @@ mod tests {
         }
     }
 
-    impl Generate<Value1> for ValueKey {
+    impl KeyFor<Value1> for ValueKey {
         const XOR: u128 = 1;
         fn distribution() -> Self::Distribution {
             rand::distributions::Standard
@@ -135,7 +142,7 @@ mod tests {
         }
     }
 
-    impl Generate<Value2> for ValueKey {
+    impl KeyFor<Value2> for ValueKey {
         const XOR: u128 = 2;
         fn distribution() -> Self::Distribution {
             rand::distributions::Standard
@@ -174,7 +181,7 @@ mod tests {
             }
         }
 
-        impl Generate<Global> for () {
+        impl KeyFor<Global> for () {
             const XOR: u128 = 635184615;
             fn distribution() -> Self::Distribution {
                 rand::distributions::Standard

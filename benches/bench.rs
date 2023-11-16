@@ -3,7 +3,7 @@ use procedural_generation::*;
 
 pub struct Key(u64);
 
-impl Generate<f64> for Key {
+impl KeyFor<f64> for Key {
     const XOR: u128 = 2319109883130468428;
     fn distribution() -> Self::Distribution {
         rand::distributions::Standard
