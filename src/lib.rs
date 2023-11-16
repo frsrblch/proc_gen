@@ -29,7 +29,18 @@ pub trait Prng<K: PrngKey> {
     fn generate<T>(&self, key: &K) -> T
     where
         K: Generate<T>,
-        <K as Generate<T>>::Distribution: Distribution<T>;
+        <K as Generate<T>>::Distribution: Distribution<T>,
+    {
+        self.generate_from(key, &K::distribution())
+    }
+
+    fn generate_from<T>(&self, key: &K, distribution: &<K as Generate<T>>::Distribution) -> T
+    where
+        K: Generate<T>,
+        <K as Generate<T>>::Distribution: Distribution<T>,
+    {
+        distribution.sample(&mut self.rng(key))
+    }
 
     fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
     where
@@ -64,15 +75,6 @@ impl Distribution<Seed> for Standard {
 }
 
 impl<K: PrngKey> Prng<K> for Seed {
-    fn generate<T>(&self, key: &K) -> T
-    where
-        K: Generate<T>,
-        <K as Generate<T>>::Distribution: Distribution<T>,
-    {
-        let mut rng = self.rng(key);
-        K::distribution().sample(&mut rng)
-    }
-
     fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
     where
         K: Generate<T>,
