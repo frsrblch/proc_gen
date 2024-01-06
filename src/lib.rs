@@ -35,10 +35,9 @@ pub trait Prng<K: PrngKey> {
 }
 
 pub trait GenerateFrom<K: PrngKey>: Prng<K> {
-    fn generate_from<T>(&self, key: &K, distribution: &<K as KeyFor<T>>::Distribution) -> T
+    fn generate_from<T>(&self, key: &K, distribution: &impl Distribution<T>) -> T
     where
         K: PrngKey + KeyFor<T>,
-        <K as KeyFor<T>>::Distribution: Distribution<T>,
     {
         distribution.sample(&mut self.rng(key))
     }
