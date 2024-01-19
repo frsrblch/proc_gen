@@ -73,7 +73,14 @@ pub struct Seed(pub u128);
 impl Seed {
     /// Generate a `Seed` by hashing an input `&str`
     pub fn new_from_str(seed: &str) -> Self {
-        let hash = &blake3::hash(seed.as_bytes());
+        // maybe this adds more entropy?
+        let a = 314915781339439421526176734092946101006u128.to_ne_bytes();
+        let b = 143036451144196485793873720760000503849u128.to_ne_bytes();
+        let mut bytes = Vec::from_iter(a);
+        bytes.extend(seed.as_bytes());
+        bytes.extend(b);
+        let hash = &blake3::hash(&bytes);
+
         let bytes = std::array::from_fn(|i| hash.as_bytes()[i]);
         let u128 = u128::from_ne_bytes(bytes);
         Seed(u128)
@@ -218,5 +225,14 @@ mod tests {
         let rng_value = rng.gen::<Value1>();
         let generate_value = seed.generate::<Value1>(&key);
         assert_eq!(rng_value, generate_value);
+    }
+
+    #[test]
+    fn seed_from_string_spaces_at_end() {
+        let a = Seed::new_from_str("test");
+        let b = Seed::new_from_str("test0");
+
+        assert_ne!(a, b);
+        dbg!((a.0 ^ b.0).count_ones());
     }
 }
