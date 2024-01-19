@@ -29,7 +29,7 @@ pub trait KeyDistribution<T>: KeyFor<T> {
 
 /// Helper trait for generating deterministic pseudorandom values for `PrngKey` keys that implement `Generate<T>`
 pub trait Prng<K: PrngKey> {
-    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
+    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64
     where
         K: KeyFor<T>;
 }
@@ -100,14 +100,14 @@ impl Distribution<Seed> for Standard {
 }
 
 impl<K: PrngKey> Prng<K> for Seed {
-    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
+    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64
     where
         K: KeyFor<T>,
     {
         // rand_pcg::Pcg64Mcg::new sets the lowest bit to 1, so the key cannot overlap with that bit
         let key = (key.key() as u128) << 64;
         let rng_seed = self.0 ^ K::XOR ^ key;
-        rand_pcg::Pcg64Mcg::new(rng_seed)
+        rand_pcg::Pcg64::new(rng_seed, 0xa02bdbf7bb3c0a7ac28fa16a64abf96)
     }
 }
 
