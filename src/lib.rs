@@ -100,7 +100,7 @@ impl<K: PrngKey> Prng<K> for Seed {
         let rng_seed = self.0 ^ K::XOR;
         let advance = (key.key() as u128) << 8;
 
-        let mut rng = rand_pcg::Pcg64Mcg::new(rng_seed, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
+        let mut rng = rand_pcg::Pcg64Mcg::new(rng_seed);
         rng.advance(advance);
         rng
     }
