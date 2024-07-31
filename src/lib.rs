@@ -1,6 +1,10 @@
 //! Types and traits for deterministic pseudorandom number generators (PRNGs).
 //!
+//! First, a [`Seed`] value is generated, either at random or with [`Seed::new_from_str`].
 //! To generate values of type `T`, a key must implement and [`KeyFor<T>`] and [`PrngKey`].
+//! There is a blanket impl for [`Prng`] that allows the construction of a pseudorandom number
+//! generator from a `Seed` and key that can be used to construct a unique and deterministic value
+//! of any user-defined type.
 //!
 //! [`Prng`] is used to instantiate the PRNG
 
@@ -18,10 +22,14 @@ impl Seed {
     /// Generate a `Seed` by hashing an input `&str`
     #[inline]
     pub fn new_from_str(seed: &str) -> Self {
-        let hash = &blake3::hash(seed.as_bytes());
-        let bytes = std::array::from_fn(|i| hash.as_bytes()[i]);
-        let u128 = u128::from_ne_bytes(bytes);
-        Seed(u128)
+        let mut bytes = [0u8; 16];
+
+        blake3::Hasher::new()
+            .update(seed.as_bytes())
+            .finalize_xof()
+            .fill(&mut bytes);
+
+        Seed(u128::from_le_bytes(bytes))
     }
 }
 
@@ -63,20 +71,30 @@ where
 impl<T, Key> Prng<Key> for T where Key: KeyFor<T> {}
 
 /// Values of this type can be used as keys when generating deterministic pseudrandom values
-pub trait PrngKey: Copy {
+pub trait PrngKey {
     /// Convert the key into a `u64` value that is used to advance the PRNG such that it produces unique values for each key
     fn key(&self) -> u64;
+}
+
+/// The empty tuple may be used to generate global random values
+impl PrngKey for () {
+    fn key(&self) -> u64 {
+        0
+    }
 }
 
 /// Values of this type can be used to generate psuedorandom values of `T`
 pub trait KeyFor<T>: PrngKey {
     /// A hard-coded random number that is xor'ed with the seed value to produce values that are unique to that (seed, key, type) tuple
+    ///
+    /// This must be unique to each implementation of `KeyFor` to prevent
     const XOR: u128;
 
-    /// Key values are cast to u128 and bitshifted before being used to advance the PRNG.
+    /// Key values are cast to `u128` and bitshifted before being used to advance the PRNG.
     ///
     /// Shifting by the default value of 8 creates a PRNG with 256 unique values per key.
     ///
     /// This bitshift can be adjusted if more or fewer unique values are needed per key.
+    /// A constructor that only uses one random number can
     const BITSHIFT: u32 = 8;
 }
