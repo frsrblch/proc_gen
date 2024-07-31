@@ -1,77 +1,22 @@
-//! Types and traits for generating deterministic pseudorandom numbers.
+//! Types and traits for deterministic pseudorandom number generators (PRNGs).
 //!
-//! To generate values of type `T`, a key must implement and `PrngKey` and `Generate<T>`
+//! To generate values of type `T`, a key must implement and [`KeyFor<T>`] and [`PrngKey`].
+//!
+//! [`Prng`] is used to instantiate the PRNG
 
-#![feature(associated_type_defaults)]
+#![warn(missing_docs)]
 
-use rand::{
-    distributions::{Distribution, Standard},
-    Rng,
-};
+#[cfg(test)]
+mod tests;
 
-/// Types that can be used as keys when generating deterministic pseudrandom values
-pub trait PrngKey {
-    fn key(&self) -> u64;
-}
-
-/// Types that can be used to generate deterministic pseudorandom values of `T`
-pub trait KeyFor<T> {
-    /// A hard-coded random number that is xor'ed with the seed value and key value to produce values that are unique to that seed-key-type
-    const XOR: u128;
-    /// The sample distribution
-    type Distribution = Standard;
-}
-
-/// Provide a default distribution for T
-pub trait KeyDistribution<T>: KeyFor<T> {
-    fn distribution() -> Self::Distribution;
-}
-
-/// Helper trait for generating deterministic pseudorandom values for `PrngKey` keys that implement `Generate<T>`
-pub trait Prng<K: PrngKey> {
-    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
-    where
-        K: KeyFor<T>;
-}
-
-pub trait GenerateFrom<K: PrngKey>: Prng<K> {
-    fn generate_from<T>(&self, key: &K, distribution: &impl Distribution<T>) -> T
-    where
-        K: PrngKey + KeyFor<T>,
-    {
-        distribution.sample(&mut self.rng(key))
-    }
-
-    fn generate_dist<T>(&self, key: &K) -> T
-    where
-        K: PrngKey + KeyFor<T> + KeyDistribution<T>,
-        <K as KeyFor<T>>::Distribution: Distribution<T>,
-    {
-        self.generate_from(key, &K::distribution())
-    }
-}
-
-impl<K: PrngKey> GenerateFrom<K> for Seed {}
-
-pub trait Generate<K: PrngKey>: GenerateFrom<K> {
-    fn generate<T>(&self, key: &K) -> T
-    where
-        K: KeyFor<T, Distribution = Standard>,
-        Standard: Distribution<T>,
-    {
-        self.generate_from(key, &Standard)
-    }
-}
-
-impl<K: PrngKey> Generate<K> for Seed {}
-
-/// Seed values for procedurally generating deterministic pseudo-random numbers
+/// Seed values for procedurally generating deterministic pseudorandom numbers
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Seed(pub u128);
+pub struct Seed(u128);
 
 impl Seed {
     /// Generate a `Seed` by hashing an input `&str`
+    #[inline]
     pub fn new_from_str(seed: &str) -> Self {
         let hash = &blake3::hash(seed.as_bytes());
         let bytes = std::array::from_fn(|i| hash.as_bytes()[i]);
@@ -81,24 +26,33 @@ impl Seed {
 }
 
 impl From<u128> for Seed {
+    #[inline]
     fn from(value: u128) -> Self {
         Seed(value)
     }
 }
 
-impl Distribution<Seed> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Seed {
+impl rand::distributions::Distribution<Seed> for rand::distributions::Standard {
+    #[inline]
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Seed {
         Seed(rng.gen())
     }
 }
 
-impl<K: PrngKey> Prng<K> for Seed {
-    fn rng<T>(&self, key: &K) -> rand_pcg::Pcg64Mcg
-    where
-        K: KeyFor<T>,
-    {
-        let rng_seed = self.0 ^ K::XOR;
-        let advance = (key.key() as u128) << 8;
+/// Generate a (seed, key, type)-specific PRNG
+///
+/// Higher keys will take longer to generate, working in `O(log₂(n))` time
+pub trait Prng<Key>: Sized
+where
+    Key: KeyFor<Self>,
+{
+    /// Generate the PRNG for a (seed, key, type) tuple
+    #[inline]
+    fn prng(seed: Seed, key: Key) -> impl rand::Rng {
+        let rng_seed = seed.0 ^ Key::XOR;
+
+        // this bitshift gives us 256 unique values for each (seed, key, type) tuple
+        let advance = (key.key() as u128) << Key::BITSHIFT;
 
         let mut rng = rand_pcg::Pcg64Mcg::new(rng_seed);
         rng.advance(advance);
@@ -106,137 +60,23 @@ impl<K: PrngKey> Prng<K> for Seed {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl<T, Key> Prng<Key> for T where Key: KeyFor<T> {}
 
-    pub struct ValueKey(u64);
+/// Values of this type can be used as keys when generating deterministic pseudrandom values
+pub trait PrngKey: Copy {
+    /// Convert the key into a `u64` value that is used to advance the PRNG such that it produces unique values for each key
+    fn key(&self) -> u64;
+}
 
-    impl ValueKey {
-        pub fn new(index: u64) -> Self {
-            ValueKey(index)
-        }
-    }
+/// Values of this type can be used to generate psuedorandom values of `T`
+pub trait KeyFor<T>: PrngKey {
+    /// A hard-coded random number that is xor'ed with the seed value to produce values that are unique to that (seed, key, type) tuple
+    const XOR: u128;
 
-    impl PrngKey for ValueKey {
-        fn key(&self) -> u64 {
-            self.0
-        }
-    }
-
-    #[derive(Debug, PartialEq)]
-    struct Value1(f64);
-
-    impl rand::distributions::Distribution<Value1> for rand::distributions::Standard {
-        fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Value1 {
-            Value1(rng.gen())
-        }
-    }
-
-    impl KeyFor<Value1> for ValueKey {
-        const XOR: u128 = 1;
-    }
-
-    #[derive(Debug, PartialEq)]
-    struct Value2(f64);
-
-    impl PartialEq<Value2> for Value1 {
-        fn eq(&self, other: &Value2) -> bool {
-            self.0.eq(&other.0)
-        }
-    }
-
-    impl rand::distributions::Distribution<Value2> for rand::distributions::Standard {
-        fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Value2 {
-            Value2(rng.gen())
-        }
-    }
-
-    impl KeyFor<Value2> for ValueKey {
-        const XOR: u128 = 2;
-    }
-
-    #[test]
-    fn same_key_and_same_type_returns_same_values() {
-        let seed = Seed::new_from_str("value test");
-        let key = ValueKey::new(7);
-        let value1a = seed.generate::<Value1>(&key);
-        let value1b = seed.generate::<Value1>(&key);
-        assert_eq!(value1a, value1b);
-    }
-
-    #[test]
-    fn same_key_and_different_type_returns_different_values() {
-        let seed = Seed::new_from_str("value test");
-        let key = ValueKey::new(7);
-        let value1 = seed.generate::<Value1>(&key);
-        let value2 = seed.generate::<Value2>(&key);
-        assert_ne!(value1, value2);
-    }
-
-    #[test]
-    fn unit_key_return_consistent_values() {
-        let seed = Seed::new_from_str("global test");
-
-        /// Prng global values
-        #[derive(Debug, PartialEq)]
-        pub struct Global(f64);
-
-        impl PrngKey for () {
-            fn key(&self) -> u64 {
-                0
-            }
-        }
-
-        impl KeyFor<Global> for () {
-            const XOR: u128 = 635184615;
-        }
-
-        impl rand::distributions::Distribution<Global> for rand::distributions::Standard {
-            fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Global {
-                Global(rng.gen())
-            }
-        }
-
-        let global1 = seed.generate::<Global>(&());
-        let global2 = seed.generate::<Global>(&());
-
-        assert_eq!(global1, global2);
-    }
-
-    #[test]
-    fn zero_and_one_generate_different_values() {
-        let seed = Seed::new_from_str("test");
-        let k1 = ValueKey(0);
-        let k2 = ValueKey(1);
-        assert_ne!(seed.generate::<Value1>(&k1), seed.generate::<Value1>(&k2));
-    }
-
-    #[test]
-    fn prng_rng_and_generate() {
-        let seed = Seed::new_from_str("rng and generate");
-        let key = ValueKey(23);
-        let mut rng = seed.rng::<Value1>(&key);
-        let rng_value = rng.gen::<Value1>();
-        let generate_value = seed.generate::<Value1>(&key);
-        assert_eq!(rng_value, generate_value);
-    }
-
-    #[test]
-    fn seed_from_string_zero_at_end() {
-        let a = Seed::new_from_str("test");
-        let b = Seed::new_from_str("test0");
-
-        assert_ne!(a, b);
-        dbg!((a.0 ^ b.0).count_ones());
-    }
-
-    #[test]
-    fn seed_from_string_spaces_at_end() {
-        let a = Seed::new_from_str("test");
-        let b = Seed::new_from_str("test ");
-
-        assert_ne!(a, b);
-        dbg!((a.0 ^ b.0).count_ones());
-    }
+    /// Key values are cast to u128 and bitshifted before being used to advance the PRNG.
+    ///
+    /// Shifting by the default value of 8 creates a PRNG with 256 unique values per key.
+    ///
+    /// This bitshift can be adjusted if more or fewer unique values are needed per key.
+    const BITSHIFT: u32 = 8;
 }
