@@ -59,7 +59,6 @@ where
     fn prng(seed: Seed, key: Key) -> impl rand::Rng {
         let rng_seed = seed.0 ^ Key::XOR;
 
-        // this bitshift gives us 256 unique values for each (seed, key, type) tuple
         let advance = (key.key() as u128) << Key::BITSHIFT;
 
         let mut rng = rand_pcg::Pcg64Mcg::new(rng_seed);
